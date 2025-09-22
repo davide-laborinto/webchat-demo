@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC Chat Demo</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚀 WebRTC Chat Demo</h1>
+            <p>Chat peer-to-peer in tempo reale</p>
+        </header>
+
+        <div class="connection-panel">
+            <div class="input-group">
+                <input type="text" id="roomId" placeholder="Inserisci ID stanza (es: room1)" maxlength="20">
+                <button id="joinRoom">Entra nella Stanza</button>
+            </div>
+            <div class="status" id="connectionStatus">Disconnesso</div>
+        </div>
+
+        <div class="chat-container" id="chatContainer" style="display: none;">
+            <div class="chat-header">
+                <h3>Stanza: <span id="currentRoom"></span></h3>
+                <div class="peer-count">Peer connessi: <span id="peerCount">0</span></div>
+            </div>
+            
+            <div class="messages-container" id="messagesContainer">
+                <!-- I messaggi appariranno qui -->
+            </div>
+            
+            <div class="message-input">
+                <input type="text" id="messageInput" placeholder="Scrivi un messaggio..." maxlength="500">
+                <button id="sendMessage">Invia</button>
+            </div>
+        </div>
+
+        <div class="info-panel">
+            <h4>ℹ️ Come funziona:</h4>
+            <ul>
+                <li>Inserisci un ID stanza e clicca "Entra nella Stanza"</li>
+                <li>Apri questa pagina in un'altra finestra/tab con lo stesso ID stanza</li>
+                <li>I messaggi vengono inviati direttamente tra i browser usando WebRTC</li>
+                <li>Il server viene usato solo per il signaling iniziale</li>
+            </ul>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
