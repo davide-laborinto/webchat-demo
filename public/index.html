@@ -4,39 +4,53 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebRTC Chat Demo</title>
+    <!-- Foglio di stile principale dell'app -->
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+    <!-- Contenitore principale per centrare e limitare la larghezza -->
     <div class="container">
+        <!-- Intestazione con titolo e sottotitolo -->
         <header>
             <h1>🚀 WebRTC Chat Demo</h1>
             <p>Chat peer-to-peer in tempo reale</p>
         </header>
 
+        <!-- Pannello di connessione: inserimento ID stanza e stato connessione -->
         <div class="connection-panel">
+            <!-- Gruppo input + bottone per unirsi a una stanza -->
             <div class="input-group">
+                <!-- Campo di testo per l'ID stanza, usato da app.js tramite getElementById('roomId') -->
                 <input type="text" id="roomId" placeholder="Inserisci ID stanza (es: room1)" maxlength="20">
+                <!-- Pulsante che richiama WebRTCChat.joinRoom() -->
                 <button id="joinRoom">Entra nella Stanza</button>
             </div>
+            <!-- Badge di stato aggiornato da app.js (connected/connecting/disconnected) -->
             <div class="status" id="connectionStatus">Disconnesso</div>
         </div>
 
+        <!-- Contenitore chat: inizialmente nascosto, viene mostrato dopo il join -->
         <div class="chat-container" id="chatContainer" style="display: none;">
+            <!-- Barra superiore con info stanza e numero peer connessi -->
             <div class="chat-header">
                 <h3>Stanza: <span id="currentRoom"></span></h3>
+                <!-- Conteggio peer aggiornato da app.js -->
                 <div class="peer-count">Peer connessi: <span id="peerCount">0</span></div>
             </div>
             
+            <!-- Area scrollabile in cui vengono inseriti i messaggi -->
             <div class="messages-container" id="messagesContainer">
                 <!-- I messaggi appariranno qui -->
             </div>
             
+            <!-- Barra di input messaggi: campo testo + pulsante invio -->
             <div class="message-input">
                 <input type="text" id="messageInput" placeholder="Scrivi un messaggio..." maxlength="500">
                 <button id="sendMessage">Invia</button>
             </div>
         </div>
 
+        <!-- Pannello informativo con istruzioni d'uso -->
         <div class="info-panel">
             <h4>ℹ️ Come funziona:</h4>
             <ul>
@@ -48,7 +62,9 @@
         </div>
     </div>
 
+    <!-- Libreria Socket.IO servita dal backend (necessaria per il signaling) -->
     <script src="/socket.io/socket.io.js"></script>
+    <!-- Script principale dell'applicazione client -->
     <script src="app.js"></script>
 </body>
 </html>

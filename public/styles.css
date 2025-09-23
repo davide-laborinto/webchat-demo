@@ -1,9 +1,11 @@
+/* Reset base e box model coerente */
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
 }
 
+/* Stili generali della pagina */
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -11,12 +13,14 @@ body {
     color: #333;
 }
 
+/* Contenitore centrale responsabile del layout principale */
 .container {
     max-width: 800px;
     margin: 0 auto;
     padding: 20px;
 }
 
+/* Intestazione della pagina (titolo e sottotitolo) */
 header {
     text-align: center;
     margin-bottom: 30px;
@@ -34,6 +38,7 @@ header p {
     opacity: 0.9;
 }
 
+/* Card per il pannello di connessione (input stanza + stato) */
 .connection-panel {
     background: white;
     border-radius: 15px;
@@ -42,12 +47,14 @@ header p {
     box-shadow: 0 10px 30px rgba(0,0,0,0.2);
 }
 
+/* Wrapper flessibile per input e pulsante */
 .input-group {
     display: flex;
     gap: 10px;
     margin-bottom: 15px;
 }
 
+/* Campo di testo per l'ID stanza */
 .input-group input {
     flex: 1;
     padding: 12px 15px;
@@ -62,6 +69,7 @@ header p {
     border-color: #667eea;
 }
 
+/* Stile dei pulsanti primari */
 button {
     padding: 12px 20px;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -89,6 +97,7 @@ button:disabled {
     transform: none;
 }
 
+/* Badge di stato della connessione */
 .status {
     padding: 10px 15px;
     border-radius: 8px;
@@ -115,6 +124,7 @@ button:disabled {
     border: 1px solid #ffeaa7;
 }
 
+/* Card contenente tutta l'interfaccia della chat */
 .chat-container {
     background: white;
     border-radius: 15px;
@@ -123,6 +133,7 @@ button:disabled {
     margin-bottom: 20px;
 }
 
+/* Barra superiore con nome stanza e conteggio peer */
 .chat-header {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
@@ -141,6 +152,7 @@ button:disabled {
     opacity: 0.9;
 }
 
+/* Area scrollabile dei messaggi */
 .messages-container {
     height: 400px;
     overflow-y: auto;
@@ -148,6 +160,7 @@ button:disabled {
     background: #f8f9fa;
 }
 
+/* Bolla messaggio base */
 .message {
     margin-bottom: 15px;
     padding: 12px 16px;
@@ -157,6 +170,7 @@ button:disabled {
     animation: slideIn 0.3s ease;
 }
 
+/* Messaggi inviati da noi (allineati a destra) */
 .message.own {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
@@ -164,12 +178,14 @@ button:disabled {
     text-align: right;
 }
 
+/* Messaggi ricevuti da altri peer (a sinistra) */
 .message.other {
     background: white;
     border: 1px solid #e1e5e9;
     margin-right: auto;
 }
 
+/* Messaggi di sistema/informativi */
 .message.system {
     background: #f8f9fa;
     border: 1px solid #dee2e6;
@@ -180,17 +196,20 @@ button:disabled {
     max-width: 90%;
 }
 
+/* Riga con mittente e timestamp */
 .message-header {
     font-size: 0.8rem;
     opacity: 0.7;
     margin-bottom: 5px;
 }
 
+/* Testo del messaggio */
 .message-content {
     font-size: 1rem;
     line-height: 1.4;
 }
 
+/* Barra di input della chat */
 .message-input {
     display: flex;
     gap: 10px;
@@ -199,6 +218,7 @@ button:disabled {
     border-top: 1px solid #e1e5e9;
 }
 
+/* Campo di testo del messaggio */
 .message-input input {
     flex: 1;
     padding: 12px 15px;
@@ -212,6 +232,7 @@ button:disabled {
     border-color: #667eea;
 }
 
+/* Card informativa con istruzioni */
 .info-panel {
     background: white;
     border-radius: 15px;
@@ -243,6 +264,7 @@ button:disabled {
     font-weight: bold;
 }
 
+/* Animazione di comparsa dei messaggi */
 @keyframes slideIn {
     from {
         opacity: 0;
@@ -254,7 +276,7 @@ button:disabled {
     }
 }
 
-/* Responsive */
+/* Regole responsive per schermi piccoli */
 @media (max-width: 600px) {
     .container {
         padding: 10px;
