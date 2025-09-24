@@ -88,8 +88,7 @@ class WebRTCChat {
 
       // Richiede al server di unirsi alla stanza specificata
       this.socket.emit("join-room", roomId);
-
-      // DAVIDE TODO: aggiorna stato connessione a CONNESSO
+      console.log("[joinRoom] Emesso evento join-room per stanza:", roomId);
     } catch (error) {
       console.error("Errore durante la connessione:", error);
       this.updateStatus("disconnected", "Errore di connessione");
@@ -97,30 +96,36 @@ class WebRTCChat {
     }
   }
 
-//   DAVIDE RIPRENDI DA QUI
+  //   DAVIDE RIPRENDI DA QUI
 
   // Registra tutti i listener per gli eventi Socket.IO ricevuti dal server
   setupSocketEvents() {
     this.socket.on("connect", () => {
-      console.log("Connesso al server");
+      console.log("[socket] Connesso al server di signaling, socketId:", this.socket.id);
+      this.updateStatus("connected", "Connesso al server di signaling");
     });
 
     this.socket.on("user-joined", (userId) => {
       // Un nuovo peer è entrato nella stanza: creiamo una connessione verso di lui
-      console.log("Nuovo utente connesso:", userId);
-      this.createPeerConnection(userId);
+      console.log("[socket] Nuovo utente connesso alla stanza:", userId, "→ ruolo: answerer (attendo offer)");
+      // Gli utenti già presenti non iniziano: aspettano l'offer e useranno ondatachannel
+      this.createPeerConnection(userId, false);
+      // Aggiorna il conteggio stimato (potrebbe essere 1 mentre si negozia)
+      this.updatePeerCount();
     });
 
     this.socket.on("user-left", (userId) => {
-      console.log("Utente disconnesso:", userId);
+      console.log("[socket] Utente uscito dalla stanza:", userId);
       this.removePeerConnection(userId);
       this.updatePeerCount();
     });
 
     this.socket.on("users-in-room", (users) => {
       // All'ingresso riceviamo la lista dei peer già presenti e iniziamo la connessione
-      console.log("Utenti nella stanza:", users);
-      users.forEach((userId) => this.createPeerConnection(userId));
+      console.log("[socket] Utenti già presenti nella stanza:", users);
+      // Il client che entra ORA è l'iniziatore verso ognuno degli utenti esistenti
+      users.forEach((userId) => this.createPeerConnection(userId, true));
+      this.updatePeerCount();
 
       // Mostra la chat non appena ci si unisce alla stanza
       this.showChatInterface();
@@ -128,20 +133,24 @@ class WebRTCChat {
 
     this.socket.on("offer", async (data) => {
       // Ricezione di una SDP offer: prepariamo e inviamo la relativa answer
+      console.log("[socket] Offer ricevuta da:", data.sender);
       await this.handleOffer(data.offer, data.sender);
     });
 
     this.socket.on("answer", async (data) => {
       // Ricezione di una SDP answer: completiamo la negoziazione
+      console.log("[socket] Answer ricevuta da:", data.sender);
       await this.handleAnswer(data.answer, data.sender);
     });
 
     this.socket.on("ice-candidate", async (data) => {
       // Ricezione di un ICE candidate da aggiungere alla RTCPeerConnection
+      console.log("[socket] ICE candidate ricevuto da:", data.sender);
       await this.handleIceCandidate(data.candidate, data.sender);
     });
 
     this.socket.on("disconnect", () => {
+      console.log("[socket] Disconnesso dal server di signaling");
       this.updateStatus("disconnected", "Disconnesso dal server");
       this.isConnected = false;
       this.joinRoomBtn.disabled = false;
@@ -149,11 +158,13 @@ class WebRTCChat {
   }
 
   // Crea una RTCPeerConnection verso lo userId, gestisce DataChannel e ICE
-  async createPeerConnection(userId) {
+  async createPeerConnection(userId, isInitiator = false) {
     if (this.peerConnections.has(userId)) {
+      console.log("[pc] Connessione già esistente con", userId);
       return;
     }
 
+    console.log("[pc] Creo nuova RTCPeerConnection verso", userId);
     const peerConnection = new RTCPeerConnection({
       iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
@@ -161,9 +172,10 @@ class WebRTCChat {
       ],
     }); // Server STUN pubblici per la scoperta del percorso di rete (NAT traversal)
 
-    // Crea un DataChannel per questo peer (solo se siamo offerer, cioè i primi a connetterci)
+    // Crea un DataChannel per questo peer SOLO se siamo l'iniziatore di questa connessione
     let dataChannel = null;
-    if (this.peerConnections.size === 0) {
+    if (isInitiator) {
+      console.log("[pc] Iniziatore: creo DataChannel verso", userId);
       dataChannel = peerConnection.createDataChannel("messages", {
         ordered: true, // Garantisce l'ordine di consegna dei messaggi
       });
@@ -173,6 +185,7 @@ class WebRTCChat {
     // Ogni ICE candidate scoperto viene inviato al peer tramite il server di signaling
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
+        console.log("[pc] ICE candidate locale → invio a", userId);
         this.socket.emit("ice-candidate", {
           target: userId,
           candidate: event.candidate,
@@ -183,13 +196,16 @@ class WebRTCChat {
     // Quando siamo answerer, riceveremo un DataChannel in arrivo da configurare
     peerConnection.ondatachannel = (event) => {
       const incomingDataChannel = event.channel;
+      console.log("[pc] DataChannel ricevuto da", userId, "stato:", incomingDataChannel.readyState);
       this.setupDataChannel(incomingDataChannel, userId);
+      // FONDAMENTALE: salva il riferimento per l'invio dei messaggi lato answerer
+      peerConnection.dataChannel = incomingDataChannel;
     };
 
     // Aggiorna lo stato quando la connessione P2P viene stabilita
     peerConnection.onconnectionstatechange = () => {
       console.log(
-        `Stato connessione con ${userId}:`,
+        `[pc] Stato connessione con ${userId}:`,
         peerConnection.connectionState
       );
       if (peerConnection.connectionState === "connected") {
@@ -199,13 +215,29 @@ class WebRTCChat {
       }
     };
 
+    // Log dello stato ICE per diagnosticare connessione P2P
+    peerConnection.oniceconnectionstatechange = () => {
+      console.log(
+        `[pc] ICE state con ${userId}:`,
+        peerConnection.iceConnectionState
+      );
+      if (
+        peerConnection.iceConnectionState === "connected" ||
+        peerConnection.iceConnectionState === "completed"
+      ) {
+        this.updateStatus("connected", "Connessione P2P stabilita");
+        this.isConnected = true;
+      }
+    };
+
     // Conserviamo un riferimento al DataChannel dentro l'oggetto peerConnection
     peerConnection.dataChannel = dataChannel;
     this.peerConnections.set(userId, peerConnection);
 
-    // Se siamo offerer (abbiamo creato il DataChannel), generiamo e inviamo la SDP offer
-    if (dataChannel) {
+    // Se siamo iniziatori (abbiamo creato il DataChannel), generiamo e inviamo la SDP offer
+    if (isInitiator && dataChannel) {
       try {
+        console.log("[pc] Iniziatore: creo e invio offer a", userId);
         const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
 
@@ -213,9 +245,9 @@ class WebRTCChat {
           target: userId,
           offer: offer,
         });
-        console.log(`Offer inviata a ${userId}`);
+        console.log(`[pc] Offer inviata a ${userId}`);
       } catch (error) {
-        console.error("Errore nella creazione dell'offer:", error);
+        console.error("[pc] Errore nella creazione dell'offer:", error);
       }
     }
   }
@@ -223,13 +255,18 @@ class WebRTCChat {
   // Configura gli handler del DataChannel per inviare/ricevere messaggi
   setupDataChannel(dataChannel, userId) {
     dataChannel.onopen = () => {
-      console.log(`Data channel aperto con ${userId}`);
+      console.log(`[dc] DataChannel aperto con ${userId} (stato: ${dataChannel.readyState})`);
+      this.updateStatus(
+        "connected",
+        `Connesso - DataChannel con ${userId.substring(0, 8)} aperto`
+      );
     };
 
     dataChannel.onmessage = (event) => {
       // I messaggi arrivano come stringhe: li interpretiamo come JSON e mostriamo il contenuto
       try {
         const message = JSON.parse(event.data);
+        console.log(`[dc] Messaggio RICEVUTO da ${userId}:`, message);
         this.displayMessage(
           message.content,
           `Peer ${userId.substring(0, 8)}`,
@@ -241,17 +278,17 @@ class WebRTCChat {
     };
 
     dataChannel.onerror = (error) => {
-      console.error("Errore nel data channel:", error);
+      console.error("[dc] Errore nel DataChannel:", error);
     };
 
     dataChannel.onclose = () => {
-      console.log(`Data channel chiuso con ${userId}`);
+      console.log(`[dc] DataChannel chiuso con ${userId}`);
     };
   }
 
   // Gestisce una SDP offer ricevuta: imposta la remote, crea e invia una answer
   async handleOffer(offer, sender) {
-    console.log(`Ricevuto offer da ${sender}`);
+    console.log(`[signaling] Ricevuto offer da ${sender}`);
     const peerConnection = this.peerConnections.get(sender);
     if (!peerConnection) {
       await this.createPeerConnection(sender);
@@ -265,7 +302,7 @@ class WebRTCChat {
         target: sender,
         answer: answer,
       });
-      console.log(`Answer inviata a ${sender}`);
+      console.log(`[signaling] Answer inviata a ${sender}`);
     } else {
       await peerConnection.setRemoteDescription(offer);
 
@@ -276,27 +313,27 @@ class WebRTCChat {
         target: sender,
         answer: answer,
       });
-      console.log(`Answer inviata a ${sender}`);
+      console.log(`[signaling] Answer inviata a ${sender}`);
     }
   }
 
   // Gestisce una SDP answer ricevuta: completa la negoziazione lato offerer
   async handleAnswer(answer, sender) {
-    console.log(`Ricevuto answer da ${sender}`);
+    console.log(`[signaling] Ricevuto answer da ${sender}`);
     const peerConnection = this.peerConnections.get(sender);
     if (peerConnection) {
       await peerConnection.setRemoteDescription(answer);
-      console.log(`Answer processata da ${sender}`);
+      console.log(`[signaling] Answer processata da ${sender}`);
     }
   }
 
   // Aggiunge alla connessione il candidate ICE ricevuto dal peer specificato
   async handleIceCandidate(candidate, sender) {
-    console.log(`Ricevuto ICE candidate da ${sender}`);
+    console.log(`[signaling] Ricevuto ICE candidate da ${sender}`);
     const peerConnection = this.peerConnections.get(sender);
     if (peerConnection) {
       await peerConnection.addIceCandidate(candidate);
-      console.log(`ICE candidate aggiunto da ${sender}`);
+      console.log(`[signaling] ICE candidate aggiunto da ${sender}`);
     }
   }
 
@@ -306,6 +343,7 @@ class WebRTCChat {
     if (peerConnection) {
       peerConnection.close();
       this.peerConnections.delete(userId);
+      console.log("[pc] Connessione rimossa con", userId);
       this.updatePeerCount();
     }
   }
@@ -314,6 +352,12 @@ class WebRTCChat {
   sendMessage() {
     const message = this.messageInput.value.trim();
     if (!message || !this.isConnected) {
+      if (!message) {
+        console.log("[chat] Messaggio vuoto, non invio");
+      }
+      if (!this.isConnected) {
+        console.log("[chat] Non connesso, impossibile inviare");
+      }
       return;
     }
 
@@ -324,6 +368,16 @@ class WebRTCChat {
       timestamp: new Date().toISOString(),
     };
 
+    console.log("[chat] INVIO messaggio:", messageData);
+    console.log(
+      "[chat] Stato connessioni:",
+      Array.from(this.peerConnections.entries()).map(([id, pc]) => ({
+        id,
+        connectionState: pc.connectionState,
+        dataChannelState: pc.dataChannel?.readyState,
+      }))
+    );
+
     let messageSent = false;
     this.peerConnections.forEach((peerConnection, userId) => {
       if (peerConnection.connectionState === "connected") {
@@ -332,18 +386,12 @@ class WebRTCChat {
         if (dataChannel && dataChannel.readyState === "open") {
           dataChannel.send(JSON.stringify(messageData));
           messageSent = true;
-          console.log(`Messaggio inviato a ${userId}`);
+          console.log(`[chat] Messaggio inviato a ${userId}`);
         } else {
-          console.log(
-            `Data channel non disponibile per ${userId}, stato:`,
-            dataChannel?.readyState
-          );
+          console.log("[chat] DataChannel non disponibile per", userId, "stato:", dataChannel?.readyState);
         }
       } else {
-        console.log(
-          `Peer ${userId} non connesso, stato:`,
-          peerConnection.connectionState
-        );
+        console.log("[chat] Peer non connesso", userId, "stato:", peerConnection.connectionState);
       }
     });
 
