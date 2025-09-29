@@ -2,190 +2,217 @@
 // Architettura in breve:
 // - Socket.IO: canale di signaling per scambio di offer/answer/ICE via server
 // - RTCPeerConnection: crea connessioni P2P tra browser
-// - RTCDataChannel: veicola i messaggi di chat direttamente tra peer
+// - RTCDataChannel: veicola i messaggi di chat direttamente tra peer (è il canale di chat diretto)
 class WebRTCChat {
   constructor() {
-    // Connessione Socket.IO al server di signaling
+    // Connessione di Socket.IO al server di signaling
     this.socket = null;
     // Mappa delle connessioni per peer che associa userId → RTCPeerConnection
-    this.peerConnections = new Map(); // Map<userId, RTCPeerConnection>
+    this.connessioniPeer = new Map(); // Map<userId, RTCPeerConnection>
     // DataChannel creato quando siamo offerer (aka il primo peer che inizia la negoziazione)
     this.dataChannel = null;
     // ID della stanza a cui l'utente è attualmente connesso
-    this.currentRoom = null;
-    // Stato logico della UI (abilitazioni e badge di stato)
+    this.stanzaCorrente = null;
+    // Stato logico della UI (serve per abilitazioni e badge di stato)
     this.isConnected = false;
     // Inizializza riferimenti agli elementi UI
-    this.initializeElements();
+    this.inizializzaElementiUI();
     // Imposta gli event listener per i pulsanti e input
-    this.setupEventListeners();
+    this.impostaEventListeners();
   }
 
   // Raccoglie e memorizza i riferimenti agli elementi del DOM (html) utilizzati dall'app
-  initializeElements() {
+  inizializzaElementiUI() {
     // Input per inserire l'ID stanza
-    this.roomIdInput = document.getElementById("roomId");
+    this.inputIdStanza = document.getElementById("roomId");
     // Pulsante per unirsi alla stanza
-    this.joinRoomBtn = document.getElementById("joinRoom");
+    this.bottoneEntraStanza = document.getElementById("joinRoom");
     // Elemento che mostra lo stato della connessione
-    this.connectionStatus = document.getElementById("connectionStatus");
+    this.statoConnessione = document.getElementById("connectionStatus");
     // Contenitore della chat
-    this.chatContainer = document.getElementById("chatContainer");
+    this.contenitoreChat = document.getElementById("chatContainer");
     // Span che mostra la stanza corrente
-    this.currentRoomSpan = document.getElementById("currentRoom");
+    this.spanStanzaCorrente = document.getElementById("currentRoom");
     // Span che mostra il numero di peer connessi
-    this.peerCountSpan = document.getElementById("peerCount");
+    this.spanConteggioPeer = document.getElementById("peerCount");
     // Contenitore dei messaggi della chat
-    this.messagesContainer = document.getElementById("messagesContainer");
+    this.contenitoreMessaggi = document.getElementById("messagesContainer");
     // Campo input per scrivere i messaggi
-    this.messageInput = document.getElementById("messageInput");
+    this.inputMessaggio = document.getElementById("messageInput");
     // Pulsante per inviare un messaggio
-    this.sendMessageBtn = document.getElementById("sendMessage");
+    this.bottoneInviaMessaggio = document.getElementById("sendMessage");
   }
 
   // Collega gli handler agli eventi UI (click/keypress) per controllare l'app
-  setupEventListeners() {
+  impostaEventListeners() {
     // Clic su "Unisciti" → joinRoom()
-    this.joinRoomBtn.addEventListener("click", () => this.joinRoom());
+    this.bottoneEntraStanza.addEventListener("click", () =>
+      this.entraInStanza()
+    );
     // Clic su "Invia" → sendMessage()
-    this.sendMessageBtn.addEventListener("click", () => this.sendMessage());
+    this.bottoneInviaMessaggio.addEventListener("click", () =>
+      this.inviaMessaggio()
+    );
 
     // Invio messaggio con tasto Invio
-    this.messageInput.addEventListener("keypress", (e) => {
+    this.inputMessaggio.addEventListener("keypress", (e) => {
       if (e.key === "Enter") {
-        this.sendMessage();
+        this.inviaMessaggio();
       }
     });
 
     // Join stanza con tasto Invio
-    this.roomIdInput.addEventListener("keypress", (e) => {
+    this.inputIdStanza.addEventListener("keypress", (e) => {
       if (e.key === "Enter") {
-        this.joinRoom();
+        this.entraInStanza();
       }
     });
   }
 
   // Avvia la connessione al server di signaling e si unisce a una stanza
-  async joinRoom() {
+  async entraInStanza() {
     // Recupera l'ID della stanza dall'input inserito dall'utente
-    const roomId = this.roomIdInput.value.trim();
+    const roomId = this.inputIdStanza.value.trim();
     if (!roomId) {
       alert("Inserisci un ID stanza valido");
       return;
     }
 
     // Aggiorna stato connessione a "in corso"
-    this.updateStatus("connecting", "Connessione in corso...");
-    this.joinRoomBtn.disabled = true;
+    this.aggiornaStato("connecting", "Connessione in corso...");
+    this.bottoneEntraStanza.disabled = true;
 
     try {
       // Crea la connessione Socket.IO al server di signaling
-      this.socket = io();
-      this.currentRoom = roomId;
+      this.socket = io(); // funzione di libreria socket.IO che crea l'oggetto di tipo socket che si collega al server
+      this.stanzaCorrente = roomId;
 
       // Registra i listener per i vari eventi di signaling da socket.io
-      this.setupSocketEvents();
+      this.impostaEventiSocket(); // dentro questa funzione avviene la logica principale!
 
-      // Richiede al server di unirsi alla stanza specificata
+      // Richiede al server di unirsi alla stanza specificata emettendo un evento join room che poi viene catturato da server.js
       this.socket.emit("join-room", roomId);
       console.log("[joinRoom] Emesso evento join-room per stanza:", roomId);
     } catch (error) {
       console.error("Errore durante la connessione:", error);
-      this.updateStatus("disconnected", "Errore di connessione");
-      this.joinRoomBtn.disabled = false;
+      this.aggiornaStato("disconnected", "Errore di connessione");
+      this.bottoneEntraStanza.disabled = false;
     }
   }
 
-  //   DAVIDE RIPRENDI DA QUI
-
   // Registra tutti i listener per gli eventi Socket.IO ricevuti dal server
-  setupSocketEvents() {
+  // dentro questa funzione ho vari eventi che quando attivati triggerano le funzioni che ho richiamato dentro essi
+  // la definizione di cosa fanno queste funzioni è tutta piu in basso in questo file!
+  impostaEventiSocket() {
+    // Evento: connessione al server socket
     this.socket.on("connect", () => {
-      console.log("[socket] Connesso al server di signaling, socketId:", this.socket.id);
-      this.updateStatus("connected", "Connesso al server di signaling");
+      console.log(
+        "[socket] Connesso al server di signaling, socketId: ",
+        this.socket.id
+      );
+      this.aggiornaStato("connected", "Connesso al server di signaling");
     });
 
+    // Evento: nuovo utente entrato nella stanza
     this.socket.on("user-joined", (userId) => {
       // Un nuovo peer è entrato nella stanza: creiamo una connessione verso di lui
-      console.log("[socket] Nuovo utente connesso alla stanza:", userId, "→ ruolo: answerer (attendo offer)");
+      console.log(
+        "[socket] Nuovo utente connesso alla stanza:",
+        userId,
+        "→ ruolo: answerer (attendo offer)"
+      );
       // Gli utenti già presenti non iniziano: aspettano l'offer e useranno ondatachannel
-      this.createPeerConnection(userId, false);
+      this.creaConnessionePeer(userId, false);
       // Aggiorna il conteggio stimato (potrebbe essere 1 mentre si negozia)
-      this.updatePeerCount();
+      this.aggiornaConteggioPeer();
     });
 
+    // Evento: utente uscito dalla stanza
     this.socket.on("user-left", (userId) => {
       console.log("[socket] Utente uscito dalla stanza:", userId);
-      this.removePeerConnection(userId);
-      this.updatePeerCount();
+      this.rimuoviConnessionePeer(userId);
+      this.aggiornaConteggioPeer();
     });
 
+    // Evento: ci sono degli utenti già presenti nella stanza
     this.socket.on("users-in-room", (users) => {
       // All'ingresso riceviamo la lista dei peer già presenti e iniziamo la connessione
       console.log("[socket] Utenti già presenti nella stanza:", users);
       // Il client che entra ORA è l'iniziatore verso ognuno degli utenti esistenti
-      users.forEach((userId) => this.createPeerConnection(userId, true));
-      this.updatePeerCount();
+      users.forEach((userId) => this.creaConnessionePeer(userId, true));
+      this.aggiornaConteggioPeer();
 
       // Mostra la chat non appena ci si unisce alla stanza
-      this.showChatInterface();
+      this.mostraInterfacciaChat();
     });
 
+    // Ricezione di una WebRTC offer
     this.socket.on("offer", async (data) => {
       // Ricezione di una SDP offer: prepariamo e inviamo la relativa answer
       console.log("[socket] Offer ricevuta da:", data.sender);
-      await this.handleOffer(data.offer, data.sender);
+      await this.gestisciOffertaSDP(data.offer, data.sender);
     });
 
+    // Ricezione di una WebRTC answer
     this.socket.on("answer", async (data) => {
       // Ricezione di una SDP answer: completiamo la negoziazione
       console.log("[socket] Answer ricevuta da:", data.sender);
-      await this.handleAnswer(data.answer, data.sender);
+      await this.gestisciRispostaSDP(data.answer, data.sender);
     });
 
+    // Ricezione di un ICE candidate
     this.socket.on("ice-candidate", async (data) => {
       // Ricezione di un ICE candidate da aggiungere alla RTCPeerConnection
       console.log("[socket] ICE candidate ricevuto da:", data.sender);
-      await this.handleIceCandidate(data.candidate, data.sender);
+      await this.gestisciCandidatoICE(data.candidate, data.sender);
     });
 
+    // Evento: disconnessione dal server
     this.socket.on("disconnect", () => {
       console.log("[socket] Disconnesso dal server di signaling");
-      this.updateStatus("disconnected", "Disconnesso dal server");
+      this.aggiornaStato("disconnected", "Disconnesso dal server");
       this.isConnected = false;
-      this.joinRoomBtn.disabled = false;
+      this.bottoneEntraStanza.disabled = false;
     });
   }
 
   // Crea una RTCPeerConnection verso lo userId, gestisce DataChannel e ICE
-  async createPeerConnection(userId, isInitiator = false) {
-    if (this.peerConnections.has(userId)) {
+  async creaConnessionePeer(userId, isInitiator = false) {
+    // check per verificare che non sei gia collegato a questo user della stanza
+    if (this.connessioniPeer.has(userId)) {
       console.log("[pc] Connessione già esistente con", userId);
-      return;
+      return; // lo skippo perche sono già connesso con lui
     }
 
+    // Crea una nuova connessione WebRTC con server STUN pubblici
     console.log("[pc] Creo nuova RTCPeerConnection verso", userId);
     const peerConnection = new RTCPeerConnection({
       iceServers: [
+        // Server STUN pubblici per la scoperta del percorso di rete (NAT traversal)
         { urls: "stun:stun.l.google.com:19302" },
         { urls: "stun:stun1.l.google.com:19302" },
       ],
-    }); // Server STUN pubblici per la scoperta del percorso di rete (NAT traversal)
+    });
 
     // Crea un DataChannel per questo peer SOLO se siamo l'iniziatore di questa connessione
     let dataChannel = null;
     if (isInitiator) {
-      console.log("[pc] Iniziatore: creo DataChannel verso", userId);
+      console.log("[pc] Iniziatore: creo DataChannel verso ", userId);
+      // adesso ho creato il mio datachannel per lo scambio di messaggi tra i due peer
       dataChannel = peerConnection.createDataChannel("messages", {
+        // funzione di libreria
         ordered: true, // Garantisce l'ordine di consegna dei messaggi
       });
-      this.setupDataChannel(dataChannel, userId);
+      // qui faccio il setup di questo dataChannel (vedi in basso la funzione cosa fa)
+      this.impostaDataChannel(dataChannel, userId);
     }
 
     // Ogni ICE candidate scoperto viene inviato al peer tramite il server di signaling
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
+        // sono tutte proprietà dell'oggetto che prendo dalle librerie...
         console.log("[pc] ICE candidate locale → invio a", userId);
+        // emetto l'evento che viene captato da server.js
         this.socket.emit("ice-candidate", {
           target: userId,
           candidate: event.candidate,
@@ -196,8 +223,14 @@ class WebRTCChat {
     // Quando siamo answerer, riceveremo un DataChannel in arrivo da configurare
     peerConnection.ondatachannel = (event) => {
       const incomingDataChannel = event.channel;
-      console.log("[pc] DataChannel ricevuto da", userId, "stato:", incomingDataChannel.readyState);
-      this.setupDataChannel(incomingDataChannel, userId);
+      console.log(
+        "[pc] DataChannel ricevuto da",
+        userId,
+        "stato:",
+        incomingDataChannel.readyState
+      );
+      // una volta ricevuto faccio anche qui il setup del canale di chat
+      this.impostaDataChannel(incomingDataChannel, userId);
       // FONDAMENTALE: salva il riferimento per l'invio dei messaggi lato answerer
       peerConnection.dataChannel = incomingDataChannel;
     };
@@ -209,9 +242,9 @@ class WebRTCChat {
         peerConnection.connectionState
       );
       if (peerConnection.connectionState === "connected") {
-        this.updateStatus("connected", "Connesso");
+        this.aggiornaStato("connected", "Connesso");
         this.isConnected = true;
-        this.updatePeerCount();
+        this.aggiornaConteggioPeer();
       }
     };
 
@@ -225,21 +258,22 @@ class WebRTCChat {
         peerConnection.iceConnectionState === "connected" ||
         peerConnection.iceConnectionState === "completed"
       ) {
-        this.updateStatus("connected", "Connessione P2P stabilita");
+        this.aggiornaStato("connected", "Connessione P2P stabilita");
         this.isConnected = true;
       }
     };
 
     // Conserviamo un riferimento al DataChannel dentro l'oggetto peerConnection
     peerConnection.dataChannel = dataChannel;
-    this.peerConnections.set(userId, peerConnection);
+    this.connessioniPeer.set(userId, peerConnection);
 
     // Se siamo iniziatori (abbiamo creato il DataChannel), generiamo e inviamo la SDP offer
+    // qui avviene il flusso di lavoro principale
     if (isInitiator && dataChannel) {
       try {
         console.log("[pc] Iniziatore: creo e invio offer a", userId);
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
+        const offer = await peerConnection.createOffer(); // funzioni di libreria
+        await peerConnection.setLocalDescription(offer); // funzioni di libreria
 
         this.socket.emit("offer", {
           target: userId,
@@ -253,10 +287,12 @@ class WebRTCChat {
   }
 
   // Configura gli handler del DataChannel per inviare/ricevere messaggi
-  setupDataChannel(dataChannel, userId) {
+  impostaDataChannel(dataChannel, userId) {
     dataChannel.onopen = () => {
-      console.log(`[dc] DataChannel aperto con ${userId} (stato: ${dataChannel.readyState})`);
-      this.updateStatus(
+      console.log(
+        `[dc] DataChannel aperto con ${userId} (stato: ${dataChannel.readyState})`
+      );
+      this.aggiornaStato(
         "connected",
         `Connesso - DataChannel con ${userId.substring(0, 8)} aperto`
       );
@@ -267,7 +303,7 @@ class WebRTCChat {
       try {
         const message = JSON.parse(event.data);
         console.log(`[dc] Messaggio RICEVUTO da ${userId}:`, message);
-        this.displayMessage(
+        this.mostraMessaggio(
           message.content,
           `Peer ${userId.substring(0, 8)}`,
           false
@@ -287,70 +323,109 @@ class WebRTCChat {
   }
 
   // Gestisce una SDP offer ricevuta: imposta la remote, crea e invia una answer
-  async handleOffer(offer, sender) {
+  async gestisciOffertaSDP(offer, sender) {
+    // Log in console: abbiamo ricevuto un'offerta SDP da un altro peer
     console.log(`[signaling] Ricevuto offer da ${sender}`);
-    const peerConnection = this.peerConnections.get(sender);
+
+    // Recupera la connessione WebRTC già esistente (se presente) con quel peer
+    const peerConnection = this.connessioniPeer.get(sender);
+
     if (!peerConnection) {
-      await this.createPeerConnection(sender);
-      const newPeerConnection = this.peerConnections.get(sender);
+      // Se NON esiste ancora una connessione con questo peer:
+      // 1. Creiamo una nuova RTCPeerConnection
+      await this.creaConnessionePeer(sender);
+
+      // 2. Recuperiamo la connessione appena creata dalla mappa
+      const newPeerConnection = this.connessioniPeer.get(sender);
+
+      // 3. Impostiamo la descrizione remota con l'offerta ricevuta (SDP offer)
       await newPeerConnection.setRemoteDescription(offer);
 
+      // 4. Creiamo una risposta (SDP answer)
       const answer = await newPeerConnection.createAnswer();
+
+      // 5. Impostiamo la descrizione locale con la risposta
       await newPeerConnection.setLocalDescription(answer);
 
+      // 6. Inviamo l'answer al peer mittente tramite il server di signaling
       this.socket.emit("answer", {
-        target: sender,
-        answer: answer,
+        target: sender, // a chi deve arrivare
+        answer: answer, // contenuto SDP
       });
+
       console.log(`[signaling] Answer inviata a ${sender}`);
     } else {
+      // Se esiste già una connessione con questo peer:
+      // 1. Aggiorniamo la descrizione remota con l'offer ricevuta
       await peerConnection.setRemoteDescription(offer);
 
+      // 2. Creiamo una risposta (answer) alla sua offerta
       const answer = await peerConnection.createAnswer();
+
+      // 3. Impostiamo la nostra descrizione locale con la risposta
       await peerConnection.setLocalDescription(answer);
 
+      // 4. Inviamo la risposta al peer tramite il server di signaling
       this.socket.emit("answer", {
         target: sender,
         answer: answer,
       });
+
       console.log(`[signaling] Answer inviata a ${sender}`);
     }
   }
 
   // Gestisce una SDP answer ricevuta: completa la negoziazione lato offerer
-  async handleAnswer(answer, sender) {
+  async gestisciRispostaSDP(answer, sender) {
+    // Log: abbiamo ricevuto una risposta SDP (answer) da un peer
     console.log(`[signaling] Ricevuto answer da ${sender}`);
-    const peerConnection = this.peerConnections.get(sender);
+
+    // Recupera la connessione WebRTC associata a quel peer
+    const peerConnection = this.connessioniPeer.get(sender);
+
     if (peerConnection) {
+      // Imposta la descrizione remota con l'answer ricevuta
+      // → questo completa la fase di negoziazione SDP lato "offerer"
       await peerConnection.setRemoteDescription(answer);
+
       console.log(`[signaling] Answer processata da ${sender}`);
     }
   }
 
   // Aggiunge alla connessione il candidate ICE ricevuto dal peer specificato
-  async handleIceCandidate(candidate, sender) {
+  async gestisciCandidatoICE(candidate, sender) {
+    // Log: abbiamo ricevuto un ICE candidate
     console.log(`[signaling] Ricevuto ICE candidate da ${sender}`);
-    const peerConnection = this.peerConnections.get(sender);
+
+    // Recupera la connessione WebRTC verso quel peer
+    const peerConnection = this.connessioniPeer.get(sender);
+
     if (peerConnection) {
+      // Aggiunge l'ICE candidate alla connessione
+      // → serve per informare il browser su come raggiungere l’altro peer (indirizzi, protocolli, porte)
       await peerConnection.addIceCandidate(candidate);
+
       console.log(`[signaling] ICE candidate aggiunto da ${sender}`);
     }
   }
 
   // Chiude e rimuove la connessione verso un peer, aggiornando il conteggio
-  removePeerConnection(userId) {
-    const peerConnection = this.peerConnections.get(userId);
+  rimuoviConnessionePeer(userId) {
+    const peerConnection = this.connessioniPeer.get(userId);
     if (peerConnection) {
       peerConnection.close();
-      this.peerConnections.delete(userId);
+      this.connessioniPeer.delete(userId);
       console.log("[pc] Connessione rimossa con", userId);
-      this.updatePeerCount();
+      this.aggiornaConteggioPeer();
     }
   }
 
   // Invia il messaggio scritto nella casella a tutti i peer connessi via DataChannel
-  sendMessage() {
-    const message = this.messageInput.value.trim();
+  inviaMessaggio() {
+    // Recupera il testo scritto dall’utente e rimuove eventuali spazi iniziali/finali
+    const message = this.inputMessaggio.value.trim();
+
+    // Controlla subito se il messaggio è vuoto o se non sei connesso
     if (!message || !this.isConnected) {
       if (!message) {
         console.log("[chat] Messaggio vuoto, non invio");
@@ -358,20 +433,21 @@ class WebRTCChat {
       if (!this.isConnected) {
         console.log("[chat] Non connesso, impossibile inviare");
       }
-      return;
+      return; // Esce dalla funzione senza fare nulla
     }
 
-    // Invia il messaggio a tutti i peer connessi
+    // Costruisce l’oggetto messaggio con testo, id del mittente e timestamp
     const messageData = {
       content: message,
-      sender: this.socket.id,
-      timestamp: new Date().toISOString(),
+      sender: this.socket.id, // id univoco del client
+      timestamp: new Date().toISOString(), // data e ora in formato ISO
     };
 
+    // Log utile per debug: cosa stai inviando e stato delle connessioni
     console.log("[chat] INVIO messaggio:", messageData);
     console.log(
       "[chat] Stato connessioni:",
-      Array.from(this.peerConnections.entries()).map(([id, pc]) => ({
+      Array.from(this.connessioniPeer.entries()).map(([id, pc]) => ({
         id,
         connectionState: pc.connectionState,
         dataChannelState: pc.dataChannel?.readyState,
@@ -379,29 +455,46 @@ class WebRTCChat {
     );
 
     let messageSent = false;
-    this.peerConnections.forEach((peerConnection, userId) => {
+
+    // Cicla su tutte le connessioni WebRTC attive con i peer
+    this.connessioniPeer.forEach((peerConnection, userId) => {
+      // Considera solo peer effettivamente connessi
       if (peerConnection.connectionState === "connected") {
         const dataChannel = peerConnection.dataChannel;
 
+        // Se il DataChannel è aperto → invia il messaggio serializzato in JSON
         if (dataChannel && dataChannel.readyState === "open") {
           dataChannel.send(JSON.stringify(messageData));
           messageSent = true;
           console.log(`[chat] Messaggio inviato a ${userId}`);
         } else {
-          console.log("[chat] DataChannel non disponibile per", userId, "stato:", dataChannel?.readyState);
+          // Se il DataChannel non è pronto, logga il problema
+          console.log(
+            "[chat] DataChannel non disponibile per",
+            userId,
+            "stato:",
+            dataChannel?.readyState
+          );
         }
       } else {
-        console.log("[chat] Peer non connesso", userId, "stato:", peerConnection.connectionState);
+        // Se il peer non è connesso, logga lo stato
+        console.log(
+          "[chat] Peer non connesso",
+          userId,
+          "stato:",
+          peerConnection.connectionState
+        );
       }
     });
 
-    // Mostra il messaggio nella nostra chat (mittente)
-    this.displayMessage(message, "Tu", true);
-    this.messageInput.value = "";
+    // Mostra subito il messaggio nella tua interfaccia locale (mittente = Tu)
+    this.mostraMessaggio(message, "Tu", true);
+    // Pulisce il campo input
+    this.inputMessaggio.value = "";
 
-    // Se non ci sono peer connessi, mostra un messaggio informativo
-    if (!messageSent && this.peerConnections.size === 0) {
-      this.displayMessage(
+    // Se non è stato inviato a nessuno e non hai peer → avviso del sistema
+    if (!messageSent && this.connessioniPeer.size === 0) {
+      this.mostraMessaggio(
         "Nessun peer connesso. Il messaggio è stato salvato localmente.",
         "Sistema",
         false
@@ -410,7 +503,7 @@ class WebRTCChat {
   }
 
   // Crea il blocco visuale del messaggio e lo aggiunge alla lista
-  displayMessage(content, sender, isOwn) {
+  mostraMessaggio(content, sender, isOwn) {
     const messageDiv = document.createElement("div");
 
     // Determina la classe CSS in base al tipo di messaggio
@@ -433,26 +526,26 @@ class WebRTCChat {
             `;
     }
 
-    this.messagesContainer.appendChild(messageDiv); // Inserisce il messaggio in fondo
-    this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+    this.contenitoreMessaggi.appendChild(messageDiv); // Inserisce il messaggio in fondo
+    this.contenitoreMessaggi.scrollTop = this.contenitoreMessaggi.scrollHeight;
   }
 
   // Aggiorna il badge di stato (connected/connecting/disconnected)
-  updateStatus(status, text) {
-    this.connectionStatus.className = `status ${status}`;
-    this.connectionStatus.textContent = text;
+  aggiornaStato(status, text) {
+    this.statoConnessione.className = `status ${status}`;
+    this.statoConnessione.textContent = text;
   }
 
   // Aggiorna il numero di peer attualmente connessi
-  updatePeerCount() {
-    this.peerCountSpan.textContent = this.peerConnections.size;
+  aggiornaConteggioPeer() {
+    this.spanConteggioPeer.textContent = this.connessioniPeer.size;
   }
 
   // Rende visibile l'interfaccia chat ed imposta lo stato iniziale
-  showChatInterface() {
-    this.chatContainer.style.display = "block";
-    this.currentRoomSpan.textContent = this.currentRoom;
-    this.updateStatus(
+  mostraInterfacciaChat() {
+    this.contenitoreChat.style.display = "block";
+    this.spanStanzaCorrente.textContent = this.stanzaCorrente;
+    this.aggiornaStato(
       "connected",
       "Nella stanza - Aspettando connessioni peer..."
     );
