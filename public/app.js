@@ -5,11 +5,11 @@
 // - RTCDataChannel: veicola i messaggi di chat direttamente tra peer (è il canale di chat diretto)
 class WebRTCChat {
   constructor() {
-    // Connessione di Socket.IO al server di signaling
+    // Connessione di Socket.IO al server di signaling (server.js)
     this.socket = null;
-    // Mappa delle connessioni per peer che associa userId → RTCPeerConnection
-    this.connessioniPeer = new Map(); // Map<userId, RTCPeerConnection>
-    // DataChannel creato quando siamo offerer (aka il primo peer che inizia la negoziazione)
+    // Mappa delle connessioni per peer che associa userId → RTCPeerConnection, serve per varie operazioni in cui dobbiamo sapere in quale room stanno gli user
+    this.connessioniPeer = new Map(); 
+    // DataChannel per lo scambio di messaggi tra i perr, creato quando siamo offerer (aka il primo peer che inizia la negoziazione)
     this.dataChannel = null;
     // ID della stanza a cui l'utente è attualmente connesso
     this.stanzaCorrente = null;
@@ -69,6 +69,8 @@ class WebRTCChat {
     });
   }
 
+  // DA QUI IN POI ci sono tutte le funzioni logiche della nostra app (entrare in una room, collegarsi ai peer, disconnettersi, etc)
+
   // Avvia la connessione al server di signaling e si unisce a una stanza
   async entraInStanza() {
     // Recupera l'ID della stanza dall'input inserito dall'utente
@@ -83,15 +85,18 @@ class WebRTCChat {
     this.bottoneEntraStanza.disabled = true;
 
     try {
-      // Crea la connessione Socket.IO al server di signaling
-      this.socket = io(); // funzione di libreria socket.IO che crea l'oggetto di tipo socket che si collega al server
+      // @IMPORTANTE: Crea la connessione Socket.IO al server di signaling
+      this.socket = io(); // funzione di libreria socket.IO che crea l'oggetto di tipo socket 
+      // una volta istanziato in questo modo si collegherà al server della nostra applicazione
       this.stanzaCorrente = roomId;
 
       // Registra i listener per i vari eventi di signaling da socket.io
       this.impostaEventiSocket(); // dentro questa funzione avviene la logica principale!
+      // qui dentro vengono attivati tutti gli event listener e l'app resta in attesa di questi eventi
+      // questi eventi verranno emessi dal nostro server.js e il "cosa succede" è descritto nella funzione qua sotto!
 
       // Richiede al server di unirsi alla stanza specificata emettendo un evento join room che poi viene catturato da server.js
-      this.socket.emit("join-room", roomId);
+      this.socket.emit("join-room", roomId); // questo è un evento che triggera il nostro server.js
       console.log("[joinRoom] Emesso evento join-room per stanza:", roomId);
     } catch (error) {
       console.error("Errore durante la connessione:", error);
@@ -104,7 +109,8 @@ class WebRTCChat {
   // dentro questa funzione ho vari eventi che quando attivati triggerano le funzioni che ho richiamato dentro essi
   // la definizione di cosa fanno queste funzioni è tutta piu in basso in questo file!
   impostaEventiSocket() {
-    // Evento: connessione al server socket
+    // Evento: connessione al server socket, questo evento è emesso automaticamente da socket.IO quando
+    // la connessione con il nostro server.js va a buon fine! 
     this.socket.on("connect", () => {
       console.log(
         "[socket] Connesso al server di signaling, socketId: ",
@@ -560,7 +566,7 @@ class WebRTCChat {
   }
 }
 
-// Inizializza l'app quando il DOM è caricato
+// Inizializza l'app quando il DOM è caricato, questo è il punto di ingresso!!!
 document.addEventListener("DOMContentLoaded", () => {
   new WebRTCChat();
 });

@@ -204,6 +204,12 @@ webchat-demo/
 
 ## 🔧 Configurazione
 
+### Documentazione dettagliata del flusso
+
+Consulta la guida completa al flusso di signaling e WebRTC tra `public/app.js` e `server.js` qui:
+
+- [WEBRTC_FLOW.md](docs/WEBRTC_FLOW.md)
+
 ### Variabili d'Ambiente
 
 - `PORT`: Porta del server (default: 3000)
