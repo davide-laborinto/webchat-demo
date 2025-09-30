@@ -54,9 +54,13 @@ Una demo di chat peer-to-peer che utilizza WebRTC per la comunicazione diretta t
 ### Architettura
 
 ```
-Browser A ←→ WebRTC Data Channel ←→ Browser B
-     ↓                                    ↓
-     └────────── Signaling Server ────────┘
+Utente (browser) ←→ WebRTC Data Channel ←→ Server HallyChat => hally-core (LAMBDA)
+     ↓                                          ↓
+     └────────── Signaling Server ──────────────┘
+
+Utente (browser) ←→ chiamata API        ←→ SERVER (signaling)   => apre webRTC
+Utente (browser) ←→ WebRTC Data Channel ←→ SERVER (chat)        => hally-core (LAMBDA)
+                           
 ```
 
 ### Processo di Connessione
